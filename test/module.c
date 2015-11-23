@@ -1,0 +1,276 @@
+
+#include "module.h"
+
+int sysctl = 1;
+module_param(sysctl, int, 0);
+
+int acl_result = -1;
+
+int device_major = 120;
+
+char *device_buffer;
+
+int device_open(struct inode *inode, struct file *filp);
+int device_release(struct inode *inode, struct file *filp);
+int device_ioctl(struct file *filp, unsigned int cmd, char* data);
+void device_exit(void);
+int device_init(void);
+
+struct file_operations device_fops = {
+	open: device_open,		//open device
+	release: device_release,	//close device
+	unlocked_ioctl: device_ioctl	//ioctl
+};
+
+#define MAX_LEN 3
+
+//struct work_struct rcv_worker;
+//struct socket *in_socket = NULL;
+struct socket *out_socket = NULL;
+//struct workqueue_struct *wq = NULL;
+//struct task_struct *notify_thread = NULL;
+
+#if 0
+static void cb_data(struct sock *sk, int bytes)
+{
+    printk(PKPRE "%s: *******\n", __func__);
+    queue_work(wq, &rcv_worker);
+}
+
+void rcv_work_queue(struct work_struct *data)
+{
+    int len;
+    //printk(PKPRE "%s: *******\n", __func__);
+    while((len = skb_queue_len(&in_socket->sk->sk_receive_queue)) > 0)
+    {
+        struct sk_buff *skb = NULL;
+
+        skb = skb_dequeue(&in_socket->sk->sk_receive_queue);
+        printk(PKPRE "message len: %i message: %s\n", skb->len - 8, skb->data + 8);
+
+        if (strcmp(skb->data + 8, "ok") == 0)
+            acl_result = 0;
+        else
+            acl_result = -1;
+
+        kfree_skb(skb);
+    }
+}
+#endif
+
+int udp_init(void)
+{
+    struct sockaddr_in addr_out;
+    //struct sockaddr_in addr_in;
+    int rc = 0;
+    printk("%s\n", __func__);
+
+#if 0
+    if(in_socket)
+    {
+        printk(PKPRE "%s: socket already set up\n", __func__);
+        return 0;
+    }
+
+    if(sock_create(PF_INET, SOCK_DGRAM, IPPROTO_UDP, &in_socket) < 0)
+    {
+        printk(KERN_ERR "%s: failed to create socket\n", __func__);
+        return -EIO;
+    }
+    addr_in.sin_family = AF_INET;
+    addr_in.sin_addr.s_addr = in_aton("127.0.0.1");
+    addr_in.sin_port = htons((unsigned short)MY_IN_PORT);
+
+    rc = in_socket->ops->bind(in_socket, (struct sockaddr *)&addr_in, sizeof(addr_in));
+    if(rc)
+    {
+        printk(KERN_ERR "%s: failed to bind\n", __func__);
+        sock_release(in_socket);
+        in_socket = NULL;
+        return -EIO;
+    }
+    in_socket->sk->sk_data_ready = cb_data;
+#endif
+    if(sock_create(PF_INET, SOCK_DGRAM, IPPROTO_UDP, &out_socket) < 0)
+    {
+        printk(KERN_ERR "%s: failed to create socket\n", __func__);
+        //sock_release(in_socket);
+        //in_socket = NULL;
+        return -EIO;
+    }
+    addr_out.sin_family = AF_INET;
+    addr_out.sin_addr.s_addr = in_aton("127.0.0.1");
+    addr_out.sin_port = htons((unsigned short)MY_OUT_PORT);
+    rc = out_socket->ops->connect(out_socket, (struct sockaddr *)&addr_out, 
+                                  sizeof(addr_out), 0);
+    if(rc)
+    {
+        printk(KERN_ERR "%s: failed to connect\n", __func__);
+        //sock_release(in_socket);
+        //in_socket = NULL;
+        sock_release(out_socket);
+        out_socket = NULL;
+        return -EIO;
+    }
+    
+#if 0
+    INIT_WORK(&rcv_worker, rcv_work_queue);
+    wq = create_singlethread_workqueue("k_rcv_wq");
+    if(!wq)
+    {
+        return -ENOMEM;
+    }
+#endif
+    printk(PKPRE "%s: success\n", __func__);
+
+    return 0;
+}
+
+void device_exit(void)
+{
+          /* Freeing the major number */
+        unregister_chrdev(device_major, "/dev/memory");
+
+        /* Freeing buffer memory */
+        if (device_buffer){
+                kfree(device_buffer);
+        }
+
+        printk(PKPRE"Removing memory module\n");
+
+}
+
+int device_init(void) 
+{
+	
+	int result;
+
+	/* Registering device */
+	result = register_chrdev(device_major, "/dev/memory", &device_fops);
+	
+	if(result < 0){
+                printk("<1>memory: cannot obtain major number %d\n", device_major);
+		return result;
+	}
+
+	/* Allocating memory for the buffer */
+	device_buffer = kmalloc(1, GFP_KERNEL); 
+	
+	if (!device_buffer){ 
+		result = -ENOMEM;
+		goto fail; 
+	} 
+	
+	memset(device_buffer, 0, 1);
+
+	printk(PKPRE"Inserting memory module\n"); 
+	
+	return 0;
+
+        fail: device_exit();
+	
+	return result;
+
+}
+
+int device_open(struct inode *inode, struct file *filp) 
+{	  printk("device_open\n");
+	  /* Success */
+	  return 0;
+}
+int device_release(struct inode *inode, struct file *filp) 
+{
+	printk("device_release\n");
+	/* Success */
+	  return 0;
+}
+
+//static DEFINE_MUTEX(device_mutex);
+
+int device_ioctl(struct file *filp, unsigned int cmd, char* data) {
+	printk("start  %d\n", cmd);
+	
+//	mutex_lock(&device_mutex);
+	switch(cmd) {
+	case 1:
+		printk("app message : %s\n", data);
+		break;
+	case 3:
+		sprintf(data, "from kernel\n");
+		printk("kernel message : %s\n", data);
+		break;
+	}
+//	mutex_unlock(&device_mutex);
+
+  //printk("sample driver: ioctl\n");
+  //printk("--> cmd: 0x%x, arg: 0x%x\n", cmd, arg);
+	return 0x33;
+}
+
+static int init(void)
+{
+
+    int ret;
+
+    ret = kernfunc_init();
+    ret = udp_init();
+
+    if(IN_ERR(ret))
+        return ret;
+
+	ret = device_init();
+
+    if(sysctl != 0)
+    {
+        ret = config_init();
+
+        if(IN_ERR(ret))
+            return ret;
+    }
+
+    hijack_syscalls();
+
+    printk(PKPRE "added to kernel\n");
+
+    return ret;
+}
+
+static void exit(void)
+{
+
+    undo_hijack_syscalls();
+
+	device_exit();
+
+    config_exit();
+#if 0
+    if(in_socket)
+    {
+        sock_release(in_socket);
+        in_socket = NULL;
+    }
+#endif
+    if(out_socket)
+    {
+        sock_release(out_socket);
+        out_socket = NULL;
+    }
+#if 0
+    if(wq)
+    {
+        flush_workqueue(wq);
+        destroy_workqueue(wq);
+        wq = NULL;
+    }
+#endif
+
+    printk(PKPRE "removed from kernel\n");
+    //return;
+}
+
+module_init(init);
+module_exit(exit);
+
+MODULE_LICENSE("GPL v2");
+MODULE_VERSION("0.7.0");
+

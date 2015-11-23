@@ -1,0 +1,1 @@
+cmd_/home/exss/work/1101/test/nsr_lac.ko := ld -r -m elf_x86_64 -T /usr/src/kernels/3.10.0-229.14.1.el7.x86_64/scripts/module-common.lds --build-id  -o /home/exss/work/1101/test/nsr_lac.ko /home/exss/work/1101/test/nsr_lac.o /home/exss/work/1101/test/nsr_lac.mod.o
